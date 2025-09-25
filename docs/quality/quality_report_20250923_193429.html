@@ -1,0 +1,34 @@
+<html><head><meta charset='utf-8'><title>Rapport Qualité Données</title>
+    <style>
+      body { font-family: -apple-system, Arial, sans-serif; margin: 24px; color:#222; }
+      h1 { color:#3b1d5a; }
+      .card { border:1px solid #eee; border-radius:12px; padding:16px 20px; margin:18px 0; box-shadow:0 1px 6px rgba(0,0,0,0.05); }
+      .ok { color: #1b8a5a; font-weight:600; }
+      .ko { color: #b00020; font-weight:600; }
+      ul { margin:8px 0 0 18px; }
+      a { color:#3b1d5a; text-decoration:none; }
+      a:hover { text-decoration:underline; }
+      .legend { font-size: 12px; color:#666; }
+    </style>
+    </head><body>
+<h1>Rapport Qualité Données</h1>
+<p class='legend'>Ce rapport vérifie des règles clés (unicité, bornes, dates, non-nuls) sur les tables du modèle en étoile.</p>
+<div class='card'><h2>dim_marque</h2><ul>
+<li><span class='ok'>✅</span> Unicité de dim_marque.marque_code</li>
+<li><span class='ok'>✅</span> Valeurs non nulles (marque_code, marque_nom)</li>
+</ul></div>
+<div class='card'><h2>fait_ventes</h2><ul>
+<li><span class='ok'>✅</span> CA non nul et positif</li>
+<li><span class='ok'>✅</span> Marge % dans [0,100]</li>
+<li><span class='ok'>✅</span> Dates dans [2015-01-01 ; 2030-12-31]</li>
+</ul></div>
+<div class='card'><h2>fait_trafic</h2><ul>
+<li><span class='ok'>✅</span> Visites >= 0</li>
+<li><span class='ok'>✅</span> Taux de conversion dans [0,1]</li>
+<li><span class='ok'>✅</span> Dates dans [2015-01-01 ; 2030-12-31]</li>
+</ul></div>
+<div class='card'><h2>fait_trends</h2><ul>
+<li><span class='ok'>✅</span> Indice Trends dans [0,100]</li>
+<li><span class='ok'>✅</span> Dates dans [2015-01-01 ; 2030-12-31]</li>
+</ul></div>
+</body></html>
