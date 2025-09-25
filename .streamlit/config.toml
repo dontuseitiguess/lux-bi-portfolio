@@ -1,0 +1,10 @@
+[server]
+headless = true
+enableXsrfProtection = true
+
+[theme]
+base = "dark"     # tu peux mettre "light" si tu préfères
+primaryColor = "#9b87f5"
+
+[client]
+toolbarMode = "minimal"
