@@ -6,40 +6,19 @@ from pathlib import Path
 @st.cache_data
 def load_data():
     """
-    Charge les données depuis Postgres (si dispo) ou fallback CSV.
-    Retourne un DataFrame pandas.
+    Charge les données depuis le CSV fallback (Streamlit Cloud).
     """
-    # Fallback CSV
     csv_fallback = Path(__file__).resolve().parents[1] / "data" / "processed" / "mv_month_brand_country.csv"
 
     if csv_fallback.exists():
         try:
             df = pd.read_csv(csv_fallback)
+            # Debug : afficher colonnes lues
+            st.caption(f"[DEBUG] Colonnes CSV fallback : {list(df.columns)}")
             return df
         except Exception as e:
-            st.error(f"Erreur de lecture du CSV fallback: {e}")
+            st.error(f"Erreur lecture CSV fallback: {e}")
             return pd.DataFrame()
 
-    st.error("Aucune source de données trouvée (Postgres non connecté et CSV fallback manquant).")
+    st.error(f"[DEBUG] Fichier CSV introuvable : {csv_fallback}")
     return pd.DataFrame()
-
-
-def safe_metric_number(value):
-    """
-    Formate un nombre pour affichage dans st.metric.
-    - Valeurs nulles => "-"
-    - > 1M => "X.XM"
-    - > 1k => "Xk"
-    """
-    if value is None:
-        return "-"
-    try:
-        v = float(value)
-    except Exception:
-        return "-"
-    if v >= 1_000_000:
-        return f"{v/1_000_000:.1f}M"
-    elif v >= 1_000:
-        return f"{v/1_000:.0f}k"
-    else:
-        return f"{v:,.0f}"
