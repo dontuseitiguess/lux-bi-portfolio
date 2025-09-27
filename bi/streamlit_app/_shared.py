@@ -1,53 +1,49 @@
-cat > bi/streamlit_app/_shared.py << 'PY'
+# bi/streamlit_app/_shared.py
+from __future__ import annotations
+
 import os
+from pathlib import Path
 import pandas as pd
+from sqlalchemy import create_engine
 import streamlit as st
 
-def _secrets():
-    try:
-        return dict(st.secrets)
-    except Exception:
-        return {}
-SECRETS = _secrets()
 
-def get_cfg(key, default=None):
-    return SECRETS.get(key, os.getenv(key, default))
-
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_data() -> pd.DataFrame:
-    # Fichiers CSV (fallback)
-    csv_path = get_cfg("CSV_FALLBACK_PATH", "data/processed/mv_month_brand_country.csv")
-    dm_path  = get_cfg("CSV_DIM_MARQUE_PATH", "data/processed/dim_marque.csv")
-    dp_path  = get_cfg("CSV_DIM_PAYS_PATH",   "data/processed/dim_pays.csv")
+    """
+    Charge la vue agrégée principale.
+    Priorité :
+      1) Base de données si DATABASE_URL/POSTGRES_URL dispo
+      2) Fallback CSV: data/processed/mv_month_brand_country.csv
+    """
+    # 1) Essai DB si URL fournie en variable d'env (Cloud : souvent indispo → on tombera sur CSV)
+    db_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
+    if db_url:
+        try:
+            engine = create_engine(db_url)
+            return pd.read_sql("select * from mv_month_brand_country", con=engine)
+        except Exception as e:
+            st.info("DB indisponible — fallback CSV utilisé.")
+            # on continue vers CSV
 
-    mv = pd.read_csv(csv_path)
+    # 2) Fallback CSV (plusieurs chemins potentiels selon où est exécuté le script)
+    candidates = [
+        Path(__file__).resolve().parents[1] / "data" / "processed" / "mv_month_brand_country.csv",
+        Path(__file__).resolve().parents[2] / "data" / "processed" / "mv_month_brand_country.csv",
+        Path.cwd() / "data" / "processed" / "mv_month_brand_country.csv",
+    ]
+    for p in candidates:
+        if p.exists():
+            return pd.read_csv(p)
 
-    # Harmonisation des colonnes
-    rename_map = {
-        "month_key": "month",
-        "ca": "ca_total",
-        "marge_pct_avg": "marge_pct",
-    }
-    mv = mv.rename(columns=rename_map)
-    mv["month"] = pd.to_datetime(mv["month"], errors="coerce")
+    raise FileNotFoundError(
+        "Aucune source trouvée : ni connexion DB valide, ni CSV "
+        "'data/processed/mv_month_brand_country.csv'."
+    )
 
-    # Enrichissement libellés
-    if os.path.exists(dm_path):
-        dm = pd.read_csv(dm_path)  # marque_key, marque
-        if "marque_key" in mv.columns:
-            mv = mv.merge(dm, on="marque_key", how="left")
-    if os.path.exists(dp_path):
-        dp = pd.read_csv(dp_path)  # pays_key, pays
-        if "pays_key" in mv.columns:
-            mv = mv.merge(dp, on="pays_key", how="left")
 
-    # Valeurs par défaut si colonnes manquent
-    for col, default in [("ca_online", 0.0), ("ca_offline", 0.0), ("unites", 0.0), ("aov", None), ("marge_pct", None)]:
-        if col not in mv.columns:
-            mv[col] = default
-    if "ca_total" not in mv.columns:
-        mv["ca_total"] = mv["ca_online"].fillna(0) + mv["ca_offline"].fillna(0)
-
-    mv["__source__"] = "csv"
-    return mv
-PY
+def safe_metric_number(x) -> str:
+    try:
+        return f"{float(x):,.0f}".replace(",", " ")
+    except Exception:
+        return "—"
