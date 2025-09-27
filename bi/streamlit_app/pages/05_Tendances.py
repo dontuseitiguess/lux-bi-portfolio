@@ -236,6 +236,104 @@ else:
         st.plotly_chart(fig_gt, use_container_width=True)
 
 # =========================
+# 7bis) Corrélation CA ↔ Google Trends
+# =========================
+st.subheader("Corrélation CA ↔ Google Trends")
+
+try:
+    # Besoin de gt déjà chargé ci-dessus + ts (série CA mensuelle)
+    if gt is not None:
+        # Identifier colonnes
+        date_col = next((c for c in gt.columns if c.lower() in ("date", "ds")), None)
+        topic_col = next((c for c in gt.columns if c.lower() in ("topic", "keyword", "marque")), None)
+        score_col = next((c for c in gt.columns if c.lower() in ("score", "value", "index")), None)
+
+        if date_col and topic_col and score_col:
+            # Normaliser la période au mois (comme ts)
+            gt_corr = gt.copy()
+            gt_corr[date_col] = pd.to_datetime(gt_corr[date_col], errors="coerce")
+            gt_corr["ds"] = gt_corr[date_col].dt.to_period("M").dt.to_timestamp()
+            # Agrège par mois & sujet (si plusieurs lignes/mois)
+            gt_corr = gt_corr.groupby(["ds", topic_col], as_index=False)[score_col].mean()
+
+            # Pivot (colonnes = topics, index = ds)
+            pivot = gt_corr.pivot(index="ds", columns=topic_col, values=score_col)
+
+            # Joindre au CA mensuel (ts: ds,y)
+            series = ts.set_index("ds").copy()
+            df_corr = series.join(pivot, how="inner")  # période commune seulement
+
+            # Option : normaliser (z-score) pour une meilleure lisibilité des corrélations
+            def z(x):
+                return (x - x.mean()) / x.std(ddof=0) if x.std(ddof=0) not in [0, None, float("nan")] else x
+            zdf = df_corr.apply(z)
+
+            # Calcul corrélation de Pearson entre y (CA) et chaque topic
+            corrs = (
+                zdf.corr(numeric_only=True)["y"]
+                .drop(labels=["y"])
+                .dropna()
+                .sort_values(ascending=False)
+                .to_frame(name="corr_Pearson")
+                .reset_index()
+                .rename(columns={"index": "topic"})
+            )
+
+            if corrs.empty:
+                st.info("Pas assez de recouvrement temporel entre CA et Trends pour calculer la corrélation.")
+            else:
+                # Affichage TOP 10
+                st.caption(f"Période commune analysée : {df_corr.index.min().date()} → {df_corr.index.max().date()}")
+                st.dataframe(corrs.head(10), use_container_width=True)
+
+                # Bar chart
+                fig_corr = px.bar(
+                    corrs.head(15),
+                    x="topic", y="corr_Pearson",
+                    labels={"topic": "Sujet", "corr_Pearson": "Corrélation (Pearson)"},
+                )
+                st.plotly_chart(fig_corr, use_container_width=True)
+
+                # Export CSV
+                st.download_button(
+                    "📥 Exporter les corrélations (CSV)",
+                    data=corrs.to_csv(index=False).encode("utf-8"),
+                    file_name="correlations_ca_trends.csv",
+                    mime="text/csv",
+                )
+
+                # Section REPORT.md (corrélation)
+                top_row = corrs.iloc[0]
+                topic_best = str(top_row["topic"])
+                corr_best = float(top_row["corr_Pearson"])
+
+                report_corr_md = f"""
+### Corrélation CA ↔ Google Trends
+
+- **Période analysée** : {df_corr.index.min().date()} → {df_corr.index.max().date()}.
+- **Sujet le plus corrélé au CA** : **{topic_best}** (*r* = {corr_best:.2f}).
+- **Interprétation** : un score de corrélation proche de 1 indique une co-variation forte entre l'intérêt de recherche et le CA. 
+  À consolider avec le contexte (campagnes, lancements, mix online/offline).
+"""
+                st.subheader("Section REPORT.md — Corrélation (à copier)")
+                st.code(report_corr_md.strip(), language="markdown")
+                st.download_button(
+                    "📝 Télécharger la section Corrélation (REPORT.md)",
+                    data=report_corr_md.strip().encode("utf-8"),
+                    file_name="REPORT_section_correlation.md",
+                    mime="text/markdown",
+                )
+        else:
+            st.info("Impossible de calculer la corrélation : colonnes `date/topic/score` non reconnues dans le CSV Trends.")
+    else:
+        st.info("Aucun CSV Trends chargé — ajoute `data/processed/google_trends.csv` pour activer cette section.")
+except Exception as e:
+    st.warning(f"Corrélation non calculée : {e}")
+
+
+
+
+# =========================
 # 8) Notes
 # =========================
 with st.expander("Notes & hypothèses"):
