@@ -1,9 +1,12 @@
 # BI Portfolio requirements
-streamlit==1.50.0
-pandas==2.3.2
-pyarrow==21.0.0
-plotly==6.3.0
-python-dotenv==1.1.1
+streamlit>=1.33
+pandas
+plotly
+SQLAlchemy
+great-expectations
+psycopg2-binary
+prophet>=1.1
+cmdstanpy>=1.2
 
 # Ajouts nécessaires
 sqlalchemy==2.0.43
