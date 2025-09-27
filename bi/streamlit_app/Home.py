@@ -11,9 +11,11 @@ st.markdown("Bienvenue dans le portfolio BI — analyse du secteur luxe.")
 df = load_data()
 
 if df.empty:
-    st.warning("Données non disponibles. Vérifie Postgres ou le CSV fallback.")
+    st.warning("⚠️ Aucune donnée trouvée.")
+    st.stop()
 else:
-    st.success(f"Dataset chargé avec {len(df)} lignes et {len(df.columns)} colonnes.")
+    st.success(f"✅ Dataset chargé : {len(df)} lignes, {len(df.columns)} colonnes")
+    st.write("Colonnes disponibles :", list(df.columns))
 
     with st.expander("Aperçu des données (5 premières lignes)"):
         st.dataframe(df.head())

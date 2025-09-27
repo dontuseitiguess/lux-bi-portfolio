@@ -22,13 +22,18 @@ def load_data():
                 df = pd.read_csv(csv_path)
                 st.caption(f"[DEBUG] Chargé depuis : {csv_path}")
                 st.caption(f"[DEBUG] Colonnes : {list(df.columns)}")
+
+                if df.empty:
+                    st.error("⚠️ Le CSV fallback a été trouvé mais il est vide.")
+                    st.stop()
+
                 return df
             except Exception as e:
                 st.error(f"Erreur lecture {csv_path}: {e}")
-                return pd.DataFrame()
+                st.stop()
 
     st.error("[DEBUG] Aucun CSV trouvé dans les chemins testés.")
-    return pd.DataFrame()
+    st.stop()
 
 
 def safe_metric_number(value):
