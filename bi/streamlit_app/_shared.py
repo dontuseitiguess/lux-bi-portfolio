@@ -1,49 +1,45 @@
 # bi/streamlit_app/_shared.py
-from __future__ import annotations
-
-import os
-from pathlib import Path
 import pandas as pd
-from sqlalchemy import create_engine
 import streamlit as st
+from pathlib import Path
 
+@st.cache_data
+def load_data():
+    """
+    Charge les données depuis Postgres (si dispo) ou fallback CSV.
+    Retourne un DataFrame pandas.
+    """
+    # Fallback CSV
+    csv_fallback = Path(__file__).resolve().parents[1] / "data" / "processed" / "mv_month_brand_country.csv"
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_data() -> pd.DataFrame:
-    """
-    Charge la vue agrégée principale.
-    Priorité :
-      1) Base de données si DATABASE_URL/POSTGRES_URL dispo
-      2) Fallback CSV: data/processed/mv_month_brand_country.csv
-    """
-    # 1) Essai DB si URL fournie en variable d'env (Cloud : souvent indispo → on tombera sur CSV)
-    db_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
-    if db_url:
+    if csv_fallback.exists():
         try:
-            engine = create_engine(db_url)
-            return pd.read_sql("select * from mv_month_brand_country", con=engine)
+            df = pd.read_csv(csv_fallback)
+            return df
         except Exception as e:
-            st.info("DB indisponible — fallback CSV utilisé.")
-            # on continue vers CSV
+            st.error(f"Erreur de lecture du CSV fallback: {e}")
+            return pd.DataFrame()
 
-    # 2) Fallback CSV (plusieurs chemins potentiels selon où est exécuté le script)
-    candidates = [
-        Path(__file__).resolve().parents[1] / "data" / "processed" / "mv_month_brand_country.csv",
-        Path(__file__).resolve().parents[2] / "data" / "processed" / "mv_month_brand_country.csv",
-        Path.cwd() / "data" / "processed" / "mv_month_brand_country.csv",
-    ]
-    for p in candidates:
-        if p.exists():
-            return pd.read_csv(p)
-
-    raise FileNotFoundError(
-        "Aucune source trouvée : ni connexion DB valide, ni CSV "
-        "'data/processed/mv_month_brand_country.csv'."
-    )
+    st.error("Aucune source de données trouvée (Postgres non connecté et CSV fallback manquant).")
+    return pd.DataFrame()
 
 
-def safe_metric_number(x) -> str:
+def safe_metric_number(value):
+    """
+    Formate un nombre pour affichage dans st.metric.
+    - Valeurs nulles => "-"
+    - > 1M => "X.XM"
+    - > 1k => "Xk"
+    """
+    if value is None:
+        return "-"
     try:
-        return f"{float(x):,.0f}".replace(",", " ")
+        v = float(value)
     except Exception:
-        return "—"
+        return "-"
+    if v >= 1_000_000:
+        return f"{v/1_000_000:.1f}M"
+    elif v >= 1_000:
+        return f"{v/1_000:.0f}k"
+    else:
+        return f"{v:,.0f}"
