@@ -1,48 +1,29 @@
-# bi/streamlit_app/_shared.py
 import pandas as pd
 import streamlit as st
 from pathlib import Path
 
 @st.cache_data
-def load_data():
+def load_data() -> pd.DataFrame:
     """
-    Charge les données depuis le CSV fallback (Streamlit Cloud ou local).
-    Teste plusieurs chemins possibles pour éviter les erreurs.
+    Charge le fallback CSV exporté depuis Postgres pour tourner sur Streamlit Cloud.
+    On teste quelques chemins usuels pour éviter les soucis d'arborescence.
     """
     candidates = [
         Path(__file__).resolve().parents[2] / "data" / "processed" / "mv_month_brand_country.csv",
         Path(__file__).resolve().parents[1] / "data" / "processed" / "mv_month_brand_country.csv",
         Path.cwd() / "data" / "processed" / "mv_month_brand_country.csv",
-        Path.cwd() / "data" / "raw" / "mv_month_brand_country.csv",
     ]
-
-    for csv_path in candidates:
-        if csv_path.exists():
+    for p in candidates:
+        if p.exists():
             try:
-                df = pd.read_csv(csv_path)
-                st.caption(f"[DEBUG] Chargé depuis : {csv_path}")
-                st.caption(f"[DEBUG] Colonnes : {list(df.columns)}")
-
-                if df.empty:
-                    st.error("⚠️ Le CSV fallback a été trouvé mais il est vide.")
-                    st.stop()
-
+                df = pd.read_csv(p)
                 return df
-            except Exception as e:
-                st.error(f"Erreur lecture {csv_path}: {e}")
-                st.stop()
-
-    st.error("[DEBUG] Aucun CSV trouvé dans les chemins testés.")
-    st.stop()
-
+            except Exception:
+                pass
+    st.error("CSV fallback introuvable : data/processed/mv_month_brand_country.csv")
+    return pd.DataFrame()
 
 def safe_metric_number(value):
-    """
-    Formate un nombre pour affichage dans st.metric.
-    - Valeurs nulles => "-"
-    - > 1M => "X.XM"
-    - > 1k => "Xk"
-    """
     if value is None:
         return "-"
     try:
@@ -51,7 +32,6 @@ def safe_metric_number(value):
         return "-"
     if v >= 1_000_000:
         return f"{v/1_000_000:.1f}M"
-    elif v >= 1_000:
+    if v >= 1_000:
         return f"{v/1_000:.0f}k"
-    else:
-        return f"{v:,.0f}"
+    return f"{v:,.0f}"
