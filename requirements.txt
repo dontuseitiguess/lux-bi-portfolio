@@ -1,13 +1,10 @@
-# BI Portfolio requirements
+
+# BI Portfolio requirements (propre)
 streamlit>=1.33
 pandas
 plotly
-SQLAlchemy
-great-expectations
-psycopg2-binary
-prophet>=1.1
-cmdstanpy>=1.2
-
-# Ajouts nécessaires
-sqlalchemy==2.0.43
+SQLAlchemy==2.0.43
 psycopg[binary]==3.2.10
+great-expectations
+statsmodels>=0.14
+
