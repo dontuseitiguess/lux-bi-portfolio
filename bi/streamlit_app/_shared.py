@@ -8,12 +8,12 @@ def load_data():
     """
     Charge les données depuis le CSV fallback (Streamlit Cloud).
     """
-    csv_fallback = Path(__file__).resolve().parents[1] / "data" / "processed" / "mv_month_brand_country.csv"
+    # Remonter 2 niveaux depuis bi/streamlit_app/_shared.py
+    csv_fallback = Path(__file__).resolve().parents[2] / "data" / "processed" / "mv_month_brand_country.csv"
 
     if csv_fallback.exists():
         try:
             df = pd.read_csv(csv_fallback)
-            # Debug : afficher colonnes lues
             st.caption(f"[DEBUG] Colonnes CSV fallback : {list(df.columns)}")
             return df
         except Exception as e:
