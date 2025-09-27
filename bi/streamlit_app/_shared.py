@@ -2,34 +2,71 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from pathlib import Path
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 # =========================
 # Chargement & préparation
 # =========================
 
 @st.cache_data
-def _read_csv_robuste() -> pd.DataFrame:
-    """Recherche le fallback CSV à divers chemins pour Cloud / local."""
-    candidates = [
-        Path(__file__).resolve().parents[2] / "data" / "processed" / "mv_month_brand_country.csv",
-        Path(__file__).resolve().parents[1] / "data" / "processed" / "mv_month_brand_country.csv",
-        Path.cwd() / "data" / "processed" / "mv_month_brand_country.csv",
+def _read_csv_first(*rel_paths: str) -> pd.DataFrame:
+    """Cherche le premier CSV existant parmi plusieurs chemins relatifs."""
+    bases = [
+        Path(__file__).resolve().parents[2],
+        Path(__file__).resolve().parents[1],
+        Path.cwd(),
     ]
-    for p in candidates:
-        if p.exists():
-            return pd.read_csv(p)
+    for base in bases:
+        for rel in rel_paths:
+            p = base / rel
+            if p.exists():
+                return pd.read_csv(p)
     return pd.DataFrame()
+
+def _find_name_column(df_dim: pd.DataFrame, candidates: list[str]) -> Optional[str]:
+    for c in candidates:
+        if c in df_dim.columns:
+            return c
+    # tente versions case-insensitive
+    lower = {c.lower(): c for c in df_dim.columns}
+    for c in candidates:
+        if c in lower:
+            return lower[c]
+    return None
+
+@st.cache_data
+def _load_dimensions() -> dict:
+    """Charge dim_marque et dim_pays et renvoie des maps clé->nom."""
+    maps: dict = {"brand_map": None, "country_map": None}
+
+    # --- Marques ---
+    dim_brand = _read_csv_first("data/processed/dim_marque.csv", "data/raw/dim_marque.csv")
+    if not dim_brand.empty:
+        key_col = "marque_key" if "marque_key" in dim_brand.columns else None
+        name_col = _find_name_column(dim_brand, ["marque", "brand", "brand_name", "name", "label"])
+        if key_col and name_col:
+            maps["brand_map"] = dict(zip(dim_brand[key_col], dim_brand[name_col]))
+
+    # --- Pays ---
+    dim_country = _read_csv_first("data/processed/dim_pays.csv", "data/raw/dim_pays.csv")
+    if not dim_country.empty:
+        key_col = "pays_key" if "pays_key" in dim_country.columns else None
+        name_col = _find_name_column(dim_country, ["pays", "country", "country_name", "name", "label"])
+        if key_col and name_col:
+            maps["country_map"] = dict(zip(dim_country[key_col], dim_country[name_col]))
+
+    return maps
 
 @st.cache_data
 def load_data() -> pd.DataFrame:
-    """Charge le CSV fallback et applique la préparation standard."""
-    df = _read_csv_robuste()
-    if df.empty:
+    """Charge le fact + enrichit avec noms de marques/pays si disponibles."""
+    fact = _read_csv_first("data/processed/mv_month_brand_country.csv")
+    if fact.empty:
         st.error("CSV fallback introuvable : data/processed/mv_month_brand_country.csv")
         return pd.DataFrame()
 
-    df = df.copy()
+    df = fact.copy()
+    # types de base
     df["month_key"] = pd.to_datetime(df["month_key"], errors="coerce")
     for col in ["ca", "unites", "aov", "marge_pct_avg", "ca_online", "ca_offline"]:
         if col in df.columns:
@@ -39,6 +76,19 @@ def load_data() -> pd.DataFrame:
     df["month"] = df["month_key"].dt.month
     df["quarter"] = df["month_key"].dt.quarter
     df = df.sort_values("month_key")
+
+    # enrichissement avec dimensions
+    maps = _load_dimensions()
+    if "marque_key" in df.columns and maps.get("brand_map"):
+        df["marque"] = df["marque_key"].map(maps["brand_map"]).fillna(df["marque_key"].astype(str))
+    elif "marque_key" in df.columns:
+        df["marque"] = df["marque_key"].astype(str)
+
+    if "pays_key" in df.columns and maps.get("country_map"):
+        df["pays"] = df["pays_key"].map(maps["country_map"]).fillna(df["pays_key"].astype(str))
+    elif "pays_key" in df.columns:
+        df["pays"] = df["pays_key"].astype(str)
+
     return df
 
 # =========================
@@ -46,12 +96,13 @@ def load_data() -> pd.DataFrame:
 # =========================
 
 def sidebar_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Filtres communs (années / marques / pays / période)."""
+    """Filtres communs (années / marques / pays / période) — robustes."""
     with st.sidebar:
         st.markdown("### Filtres")
+
         years = sorted(df["year"].dropna().unique().tolist())
-        marques = sorted(df["marque_key"].dropna().unique().tolist()) if "marque_key" in df.columns else []
-        pays = sorted(df["pays_key"].dropna().unique().tolist()) if "pays_key" in df.columns else []
+        marques = sorted(df["marque"].dropna().unique().tolist()) if "marque" in df.columns else []
+        pays = sorted(df["pays"].dropna().unique().tolist()) if "pays" in df.columns else []
 
         sel_years = st.multiselect("Années", years, default=years)
         sel_marques = st.multiselect("Marques", marques, default=marques) if marques else []
@@ -68,9 +119,9 @@ def sidebar_filters(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
 
     mask = (df["month_key"].between(from_dt, to_dt)) & (df["year"].isin(sel_years))
     if sel_marques:
-        mask &= df["marque_key"].isin(sel_marques)
+        mask &= df["marque"].isin(sel_marques)
     if sel_pays:
-        mask &= df["pays_key"].isin(sel_pays)
+        mask &= df["pays"].isin(sel_pays)
 
     return df.loc[mask].copy(), {
         "years": sel_years, "marques": sel_marques, "pays": sel_pays,
@@ -92,7 +143,6 @@ def yoy(last, prev):
     return None
 
 def ytd(df: pd.DataFrame, value_col="ca") -> Dict[str, float | None]:
-    """Retourne YTD courant vs N-1 sur même borne mois."""
     if df.empty:
         return {"ytd": None, "ytd_prev": None, "ytd_yoy": None}
     max_month_cur = df["month_key"].max().month

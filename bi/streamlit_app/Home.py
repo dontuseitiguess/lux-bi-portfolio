@@ -12,7 +12,7 @@ dff, meta = sidebar_filters(df)
 
 kpi_ca = dff["ca"].sum() if "ca" in dff.columns else None
 kpi_units = dff["unites"].sum() if "unites" in dff.columns else None
-kpi_countries = dff["pays_key"].nunique() if "pays_key" in dff.columns else None
+kpi_countries = dff["pays"].nunique() if "pays" in dff.columns else dff["pays_key"].nunique()
 
 c1, c2, c3 = st.columns(3)
 c1.metric("CA total", safe_metric_number(kpi_ca))

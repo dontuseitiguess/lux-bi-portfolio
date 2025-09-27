@@ -13,7 +13,7 @@ dff, meta = sidebar_filters(df)
 # KPI globaux
 ca_total = dff["ca"].sum()
 units_total = dff["unites"].sum()
-pays_actifs = dff["pays_key"].nunique()
+pays_actifs = dff["pays"].nunique() if "pays" in dff.columns else dff["pays_key"].nunique()
 marge_avg = dff["marge_pct_avg"].mean() if "marge_pct_avg" in dff.columns else None
 
 last_year, prev_year = dff["year"].max(), dff["year"].max()-1
@@ -27,7 +27,7 @@ c1, c2, c3, c4 = st.columns(4)
 c1.metric("CA total", safe_metric_number(ca_total), f"{yoy_global:.1f}% YoY" if yoy_global else None)
 c2.metric("Unités", safe_metric_number(units_total))
 c3.metric("Pays actifs", safe_metric_number(pays_actifs))
-c4.metric("Marge moyenne", f"{marge_avg:.1f}%" if marge_avg else "-")
+c4.metric("Marge moyenne", f"{marge_avg:.1f}%" if marge_avg is not None else "-")
 
 # YTD
 st.subheader("YTD vs N-1")
@@ -51,9 +51,9 @@ season = dff.pivot_table(index="year", columns="month", values="ca", aggfunc="su
 fig_h = px.imshow(season, aspect="auto", labels=dict(x="Mois", y="Année", color="CA"))
 st.plotly_chart(fig_h, use_container_width=True)
 
-# Top listes
+# Top listes avec noms
 c8, c9 = st.columns(2)
 c8.subheader("Top 5 marques")
-c8.dataframe(dff.groupby("marque_key")["ca"].sum().nlargest(5))
+c8.dataframe(dff.groupby("marque")["ca"].sum().sort_values(ascending=False).head(5))
 c9.subheader("Top 5 pays")
-c9.dataframe(dff.groupby("pays_key")["ca"].sum().nlargest(5))
+c9.dataframe(dff.groupby("pays")["ca"].sum().sort_values(ascending=False).head(5))
