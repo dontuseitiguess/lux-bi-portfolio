@@ -8,3 +8,6 @@ psycopg[binary]==3.2.10
 great-expectations
 statsmodels>=0.14
 
+prophet>=1.1
+cmdstanpy>=1.2
+plotly
