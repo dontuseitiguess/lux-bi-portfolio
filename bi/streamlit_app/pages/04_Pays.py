@@ -65,8 +65,10 @@ c1.metric("CA total (EUR)", safe_metric_number(ca_total))
 c2.metric("Pays actifs", str(nb_pays))
 c3.metric("Top pays (CA)", top_label)
 
-# --- 5) Classement pays ---
+# --- 5) Classement par CA ---
 st.subheader("Classement par CA")
+
+# Colonnes cibles + fonction d'agg et libellé lisible
 rank_cols = {
     "ca": ("CA (EUR)", "sum"),
     "unites": ("Unités", "sum"),
@@ -74,22 +76,34 @@ rank_cols = {
     "ca_online": ("CA Online", "sum"),
     "ca_offline": ("CA Offline", "sum"),
 }
-agg_dict = {k: v[1] for k, v in rank_cols.items() if k in dff.columns}
-rank = (
-    dff.groupby("pays", as_index=False)
-    .agg(**agg_dict)
-    .sort_values("ca", ascending=False)
-)
-rank_display = rank.copy()
-if "ca_online" in rank_display.columns and "ca" in rank_display.columns:
-    rank_display["% Online"] = (rank_display["ca_online"] / rank_display["ca"] * 100).round(1).fillna(0)
 
-# Renommer colonnes lisibles
-rename_map = {k: v[0] for k, v in rank_cols.items() if k in rank_display.columns}
-rename_map.update({"pays": "Pays"})
-rank_display = rank_display.rename(columns=rename_map)
+present_cols = [c for c in rank_cols if c in dff.columns]
 
-st.dataframe(rank_display, use_container_width=True)
+# Cast en numérique (sécurisé) pour éviter les plantages d'agg
+for c in present_cols:
+    dff[c] = pd.to_numeric(dff[c], errors="coerce")
+
+agg_dict = {c: rank_cols[c][1] for c in present_cols}
+
+if not agg_dict:
+    st.info("Colonnes d'agrégation absentes (aucune parmi ca, unites, marge_pct_avg, ca_online, ca_offline).")
+else:
+    rank = dff.groupby("pays", as_index=False).agg(agg_dict)
+
+    if "ca" in rank.columns:
+        rank = rank.sort_values("ca", ascending=False)
+
+    rank_display = rank.copy()
+    if {"ca_online", "ca"}.issubset(rank_display.columns):
+        rank_display["% Online"] = (rank_display["ca_online"] / rank_display["ca"] * 100).round(1)
+
+    rename_map = {"pays": "Pays"}
+    rename_map.update({c: rank_cols[c][0] for c in present_cols})
+    rank_display = rank_display.rename(columns=rename_map)
+
+    prefer = ["Pays", "CA (EUR)", "Unités", "Marge (%)", "CA Online", "CA Offline", "% Online"]
+    order = [c for c in prefer if c in rank_display.columns]
+    st.dataframe(rank_display[order], use_container_width=True)
 
 # --- 6) Graphique Top 10 pays (CA) ---
 st.subheader("Top 10 pays par CA")
@@ -114,7 +128,6 @@ if year_sel != "Tous" and "year" in df.columns:
     yoy["YoY %"] = ((yoy["ca_cur"] / yoy["ca_prev"] - 1) * 100).replace([pd.NA, pd.NaT], None)
     yoy = yoy.sort_values("YoY %", ascending=False)
 
-    # Affichage table courte + barres
     st.dataframe(yoy[["pays", "ca_prev", "ca_cur", "YoY %"]], use_container_width=True)
     fig2 = px.bar(
         yoy.dropna(subset=["YoY %"]).head(15),
