@@ -1,45 +1,41 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 from _shared import load_data, sidebar_filters
 
-st.title("Pays — Performance")
+st.title("Tendances & Prévisions")
 
 df = load_data()
 if df.empty: st.stop()
 dff, meta = sidebar_filters(df)
 
-country_col = "pays" if "pays" in dff.columns else ("pays_key" if "pays_key" in dff.columns else None)
-if not country_col or "ca" not in dff:
-    st.warning("Colonnes nécessaires manquantes pour l'analyse pays.")
-    st.stop()
+ts=dff.groupby(pd.Grouper(key="month_key",freq="MS"))["ca"].sum().reset_index().rename(columns={"month_key":"ds","ca":"y"})
+forecast_df=None
 
-rank = dff.groupby(country_col, as_index=False)["ca"].sum().sort_values("ca", ascending=False)
-st.subheader("Classement pays")
-st.dataframe(rank.head(20), use_container_width=True)
-st.plotly_chart(px.bar(rank.head(15), x=country_col, y="ca", labels={country_col:"Pays","ca":"CA (EUR)"}),
-                use_container_width=True)
+use_prophet=st.toggle("Essayer Prophet",True)
+if use_prophet and len(ts)>=12:
+    try:
+        from prophet import Prophet
+        m=Prophet(yearly_seasonality=True)
+        m.fit(ts)
+        fc=m.predict(m.make_future_dataframe(periods=24,freq="MS"))
+        forecast_df=fc[["ds","yhat","yhat_lower","yhat_upper"]]
+        fig=go.Figure()
+        fig.add_trace(go.Scatter(x=ts["ds"],y=ts["y"],mode="lines",name="Historique"))
+        fig.add_trace(go.Scatter(x=forecast_df["ds"],y=forecast_df["yhat"],mode="lines",name="Prévision"))
+        st.plotly_chart(fig,use_container_width=True)
+    except Exception as e:
+        st.warning(f"Prophet erreur : {e}")
+        use_prophet=False
+if not use_prophet:
+    ts["MA6"]=ts["y"].rolling(6,min_periods=1).mean()
+    fig=go.Figure()
+    fig.add_trace(go.Scatter(x=ts["ds"],y=ts["y"],mode="lines",name="Historique"))
+    fig.add_trace(go.Scatter(x=ts["ds"],y=ts["MA6"],mode="lines",name="MA6"))
+    st.plotly_chart(fig,use_container_width=True)
 
-if "year" in dff:
-    last, prev = dff["year"].max(), dff["year"].max()-1
-    yoy_df=[]
-    for pk,g in dff.groupby(country_col):
-        ca_last, ca_prev = g.loc[g["year"]==last,"ca"].sum(), g.loc[g["year"]==prev,"ca"].sum()
-        y=None
-        if ca_prev and ca_prev!=0:
-            y=(ca_last/ca_prev-1)*100
-        if y is not None:
-            yoy_df.append({country_col:pk, "yoy%":y})
-    if yoy_df:
-        yoy_df=pd.DataFrame(yoy_df).sort_values("yoy%",ascending=False)
-        st.subheader("YoY par pays")
-        st.plotly_chart(px.bar(yoy_df, x=country_col, y="yoy%", labels={country_col:"Pays","yoy%":"YoY %"}),
-                        use_container_width=True)
-
-# Focus pays
-p_all = sorted(dff[country_col].unique())
-if p_all:
-    focus = st.selectbox("Pays focus", p_all)
-    ts = dff[dff[country_col]==focus].groupby("month_key",as_index=False)["ca"].sum()
-    st.plotly_chart(px.line(ts, x="month_key", y="ca", labels={"month_key":"Mois","ca":"CA (EUR)"}),
-                    use_container_width=True)
+if forecast_df is not None and not forecast_df.empty:
+    st.download_button("💾 Exporter la prévision (CSV)",
+                       data=forecast_df.to_csv(index=False).encode("utf-8"),
+                       file_name="forecast.csv", mime="text/csv")
+st.caption("👉 Prévision rapide : Prophet si disponible, sinon moyenne mobile (fallback).")

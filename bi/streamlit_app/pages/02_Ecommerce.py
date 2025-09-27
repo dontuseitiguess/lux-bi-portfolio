@@ -27,7 +27,10 @@ c1.metric("CA online", safe_metric_number(tot_on), f"{on_yoy:.1f}%" if on_yoy el
 c2.metric("CA offline", safe_metric_number(tot_off), f"{off_yoy:.1f}%" if off_yoy else None)
 c3.metric("Part online", f"{share_on:.1f}%" if share_on else "-")
 
-st.subheader("Séries mensuelles")
+st.subheader("Séries mensuelles (stacked)")
 ts = dff.groupby(pd.Grouper(key="month_key",freq="MS"))[["ca_online","ca_offline"]].sum().reset_index()
-tsm = ts.melt(id_vars="month_key", var_name="canal", value_name="ca")
-st.plotly_chart(px.area(tsm,x="month_key",y="ca",color="canal"), use_container_width=True)
+long = ts.melt(id_vars="month_key", var_name="canal", value_name="ca")
+fig = px.area(long, x="month_key", y="ca", color="canal",
+              labels={"month_key":"Mois","ca":"CA (EUR)","canal":"Canal"})
+st.plotly_chart(fig, use_container_width=True)
+st.caption("👉 Volume mensuel par canal, cumulatif pour percevoir la dynamique relative.")
