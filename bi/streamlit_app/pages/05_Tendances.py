@@ -19,7 +19,7 @@ if "month_key" not in df.columns or "ca" not in df.columns:
     st.error("Colonnes requises manquantes : 'month_key' et/ou 'ca'.")
     st.stop()
 
-# Parse date + CA mensuel
+# Parse date + CA mensuel (série temporelle)
 df["month_key"] = pd.to_datetime(df["month_key"], errors="coerce")
 ts = (
     df.groupby(pd.Grouper(key="month_key", freq="MS"))["ca"]
@@ -31,7 +31,6 @@ ts = (
 
 with st.expander("Aperçu séries (5 premières lignes)"):
     st.dataframe(ts.head())
-
 st.caption(f"Série mensuelle : {len(ts)} points | de {ts['ds'].min().date()} à {ts['ds'].max().date()}")
 
 # =========================
@@ -45,7 +44,7 @@ if option_hzn == "Années (custom)":
 cp_scale = float(c3.slider("Changepoint prior scale (sensibilité)", 0.01, 0.50, 0.10, 0.01))
 
 # =========================
-# 3) Graphique Historique simple
+# 3) Historique simple
 # =========================
 st.subheader("Historique du CA (mensuel)")
 fig_hist = px.line(ts, x="ds", y="y", labels={"ds": "Mois", "y": "CA (EUR)"})
@@ -55,17 +54,13 @@ st.plotly_chart(fig_hist, use_container_width=True)
 # 4) Prévision (Prophet si dispo)
 # =========================
 st.subheader("Prévision")
-
 prophet_ok = True
 forecast_df = None
 try:
     from prophet import Prophet
-except Exception as e:
+except Exception:
     prophet_ok = False
-    st.info(
-        "Prophet n'est pas disponible dans l'environnement. "
-        "Le graphique ci-dessous pourrait utiliser un modèle alternatif si activé."
-    )
+    st.info("Prophet indisponible sur cet environnement (ok : la page reste fonctionnelle).")
 
 if prophet_ok and len(ts) >= 12:
     # Horizon en mois
@@ -83,33 +78,34 @@ if prophet_ok and len(ts) >= 12:
             daily_seasonality=False,
             changepoint_prior_scale=cp_scale,
         )
-        m.fit(ts)  # ts avec colonnes ds (datetime) et y (numérique)
+        m.fit(ts)  # colonnes: ds (datetime), y (numérique)
 
         future = m.make_future_dataframe(periods=periods, freq="MS")
         forecast = m.predict(future)
 
         forecast_df = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
 
-        # Plot custom Plotly (historique + forecast + IC)
+        # Plot custom (historique + IC + prévision)
         hist = ts.rename(columns={"y": "value"}).assign(type="Historique")
         fc = forecast_df.rename(columns={"yhat": "value"}).assign(type="Prévision")
         fc_ci = forecast_df.copy()
 
         fig_fc = go.Figure()
         fig_fc.add_trace(go.Scatter(x=hist["ds"], y=hist["value"], mode="lines", name="Historique"))
-        fig_fc.add_trace(go.Scatter(x=fc_ci["ds"], y=fc_ci["yhat_upper"], mode="lines", name="IC supérieur", line=dict(width=0), showlegend=False))
-        fig_fc.add_trace(go.Scatter(x=fc_ci["ds"], y=fc_ci["yhat_lower"], fill="tonexty", mode="lines", name="Intervalle de confiance", line=dict(width=0)))
+        fig_fc.add_trace(go.Scatter(x=fc_ci["ds"], y=fc_ci["yhat_upper"], mode="lines",
+                                    name="IC supérieur", line=dict(width=0), showlegend=False))
+        fig_fc.add_trace(go.Scatter(x=fc_ci["ds"], y=fc_ci["yhat_lower"], fill="tonexty", mode="lines",
+                                    name="Intervalle de confiance", line=dict(width=0)))
         fig_fc.add_trace(go.Scatter(x=fc["ds"], y=fc["value"], mode="lines", name="Prévision"))
         fig_fc.update_layout(xaxis_title="Date", yaxis_title="CA (EUR)")
         st.plotly_chart(fig_fc, use_container_width=True)
     except Exception as e:
         st.warning(f"Prévision Prophet impossible : {e}")
-
 elif len(ts) < 12:
     st.warning("Pas assez d'historique (< 12 points) pour une prévision fiable.")
 
 # =========================
-# 5) Bouton Export CSV (prévision)
+# 5) Export CSV (prévision)
 # =========================
 if forecast_df is not None and not forecast_df.empty:
     st.download_button(
@@ -160,10 +156,9 @@ with st.expander("Insights automatiques"):
             bullets.append(f"• **CAGR historique** {y_first}→{last_year} : {cagr_hist_val:.1f} %/an")
         if cagr_fc_val is not None:
             bullets.append(f"• **CAGR prévu** : {cagr_fc_val:.1f} %/an (jusqu'à l'horizon de prévision)")
-
         st.markdown("\n".join(bullets))
 
-        # Section REPORT.md prête à copier
+        # Section REPORT.md prête à copier/télécharger
         report_md = f"""
 ## Tendances & Prévisions — Résumé exécutif
 
@@ -172,19 +167,16 @@ with st.expander("Insights automatiques"):
 - **CAGR historique** {y_first}→{last_year} : {f"{cagr_hist_val:.1f} %/an" if cagr_hist_val is not None else "n/a"}.
 - **Prévision :** modèle Prophet avec saisonnalité annuelle et sensibilité {cp_scale}.
 - **CAGR prévu** (vers la fin d'horizon) : {f"{cagr_fc_val:.1f} %/an" if cagr_fc_val is not None else "n/a"}.
-- **Remarques :** les écarts peuvent provenir de promotions, lancements produits et mix online/offline. À valider avec le métier.
-
+- **Remarques :** les écarts peuvent venir de promotions, lancements produits, mix online/offline. À valider avec le métier.
 """
         st.subheader("Section REPORT.md (à copier)")
         st.code(report_md.strip(), language="markdown")
-
         st.download_button(
             "📝 Télécharger la section REPORT.md",
             data=report_md.strip().encode("utf-8"),
             file_name="REPORT_section_tendances.md",
             mime="text/markdown",
         )
-
     except Exception:
         st.write("Insights indisponibles (données insuffisantes).")
 
@@ -231,44 +223,39 @@ else:
         gff = gff.sort_values(date_col)
 
         st.caption(f"Tendances — {sel}")
-        fig_gt = px.line(gff, x=date_col, y=score_col, color=topic_col if sel == "Tous" else None,
-                         labels={date_col: "Date", score_col: "Score", topic_col: "Sujet"})
+        fig_gt = px.line(
+            gff, x=date_col, y=score_col,
+            color=topic_col if sel == "Tous" else None,
+            labels={date_col: "Date", score_col: "Score", topic_col: "Sujet"}
+        )
         st.plotly_chart(fig_gt, use_container_width=True)
 
-# =========================
-# 7bis) Corrélation CA ↔ Google Trends
-# =========================
-st.subheader("Corrélation CA ↔ Google Trends")
-
-try:
-    # Besoin de gt déjà chargé ci-dessus + ts (série CA mensuelle)
-    if gt is not None:
-        # Identifier colonnes
-        date_col = next((c for c in gt.columns if c.lower() in ("date", "ds")), None)
-        topic_col = next((c for c in gt.columns if c.lower() in ("topic", "keyword", "marque")), None)
-        score_col = next((c for c in gt.columns if c.lower() in ("score", "value", "index")), None)
-
-        if date_col and topic_col and score_col:
-            # Normaliser la période au mois (comme ts)
+        # =========================
+        # 7bis) Corrélation CA ↔ Google Trends (améliorée)
+        # =========================
+        st.subheader("Corrélation CA ↔ Google Trends")
+        try:
             gt_corr = gt.copy()
             gt_corr[date_col] = pd.to_datetime(gt_corr[date_col], errors="coerce")
             gt_corr["ds"] = gt_corr[date_col].dt.to_period("M").dt.to_timestamp()
-            # Agrège par mois & sujet (si plusieurs lignes/mois)
+
+            # Agrégat mensuel par sujet
             gt_corr = gt_corr.groupby(["ds", topic_col], as_index=False)[score_col].mean()
 
-            # Pivot (colonnes = topics, index = ds)
+            # Pivot sujets en colonnes
             pivot = gt_corr.pivot(index="ds", columns=topic_col, values=score_col)
 
-            # Joindre au CA mensuel (ts: ds,y)
+            # Joindre à la série CA
             series = ts.set_index("ds").copy()
-            df_corr = series.join(pivot, how="inner")  # période commune seulement
+            df_corr = series.join(pivot, how="inner")  # période commune
 
-            # Option : normaliser (z-score) pour une meilleure lisibilité des corrélations
+            # Normalisation (z-score) pour robustesse des corrélations
             def z(x):
-                return (x - x.mean()) / x.std(ddof=0) if x.std(ddof=0) not in [0, None, float("nan")] else x
+                std = x.std(ddof=0)
+                return (x - x.mean()) / std if std not in (0, None, float("nan")) else x
             zdf = df_corr.apply(z)
 
-            # Calcul corrélation de Pearson entre y (CA) et chaque topic
+            # Corrélation de Pearson entre y (CA) et chaque topic
             corrs = (
                 zdf.corr(numeric_only=True)["y"]
                 .drop(labels=["y"])
@@ -279,41 +266,54 @@ try:
                 .rename(columns={"index": "topic"})
             )
 
+            # Nombre d'observations par topic (après jointure)
+            n_obs = df_corr.notna().astype(int).groupby(level=0).first()  # pas utilisé
+            # plus simple: compter par colonne
+            n_per_topic = df_corr.drop(columns=["y"]).notna().sum(axis=0).to_dict()
+            corrs["n_obs"] = corrs["topic"].map(n_per_topic)
+
             if corrs.empty:
                 st.info("Pas assez de recouvrement temporel entre CA et Trends pour calculer la corrélation.")
             else:
-                # Affichage TOP 10
-                st.caption(f"Période commune analysée : {df_corr.index.min().date()} → {df_corr.index.max().date()}")
-                st.dataframe(corrs.head(10), use_container_width=True)
+                # Affichage TOP (barres horizontales, axe -1→1, labels)
+                corrs_sorted = corrs.sort_values("corr_Pearson", ascending=True).tail(15)
+                corrs_sorted["signe"] = corrs_sorted["corr_Pearson"].apply(lambda v: "Positif" if v >= 0 else "Négatif")
+                corrs_sorted["text"] = corrs_sorted["corr_Pearson"].map(lambda v: f"{v:.2f}")
 
-                # Bar chart
                 fig_corr = px.bar(
-                    corrs.head(15),
-                    x="topic", y="corr_Pearson",
-                    labels={"topic": "Sujet", "corr_Pearson": "Corrélation (Pearson)"},
+                    corrs_sorted,
+                    x="corr_Pearson",
+                    y="topic",
+                    orientation="h",
+                    color="signe",
+                    hover_data={"n_obs": True, "corr_Pearson": ":.3f", "signe": False},
+                    labels={"topic": "Sujet", "corr_Pearson": "Corrélation (Pearson)", "n_obs": "n obs"},
                 )
+                fig_corr.update_layout(xaxis=dict(range=[-1, 1]))
+                fig_corr.update_traces(text=corrs_sorted["text"], textposition="outside", cliponaxis=False)
+                st.caption(f"Période commune analysée : {df_corr.index.min().date()} → {df_corr.index.max().date()} (n obs par sujet affiché dans le hover)")
                 st.plotly_chart(fig_corr, use_container_width=True)
 
                 # Export CSV
                 st.download_button(
                     "📥 Exporter les corrélations (CSV)",
-                    data=corrs.to_csv(index=False).encode("utf-8"),
+                    data=corrs.sort_values("corr_Pearson", ascending=False).to_csv(index=False).encode("utf-8"),
                     file_name="correlations_ca_trends.csv",
                     mime="text/csv",
                 )
 
                 # Section REPORT.md (corrélation)
-                top_row = corrs.iloc[0]
+                top_row = corrs.sort_values("corr_Pearson", ascending=False).iloc[0]
                 topic_best = str(top_row["topic"])
                 corr_best = float(top_row["corr_Pearson"])
-
+                n_best = int(top_row.get("n_obs", 0))
                 report_corr_md = f"""
 ### Corrélation CA ↔ Google Trends
 
 - **Période analysée** : {df_corr.index.min().date()} → {df_corr.index.max().date()}.
-- **Sujet le plus corrélé au CA** : **{topic_best}** (*r* = {corr_best:.2f}).
-- **Interprétation** : un score de corrélation proche de 1 indique une co-variation forte entre l'intérêt de recherche et le CA. 
-  À consolider avec le contexte (campagnes, lancements, mix online/offline).
+- **Sujet le plus corrélé au CA** : **{topic_best}** (*r* = {corr_best:.2f}, n = {n_best}).
+- **Interprétation** : un r proche de 1 indique une co-variation forte entre l'intérêt de recherche et le CA.
+  À consolider avec le contexte (campagnes, lancements, mix online/offline) et la taille d'échantillon.
 """
                 st.subheader("Section REPORT.md — Corrélation (à copier)")
                 st.code(report_corr_md.strip(), language="markdown")
@@ -325,13 +325,8 @@ try:
                 )
         else:
             st.info("Impossible de calculer la corrélation : colonnes `date/topic/score` non reconnues dans le CSV Trends.")
-    else:
-        st.info("Aucun CSV Trends chargé — ajoute `data/processed/google_trends.csv` pour activer cette section.")
 except Exception as e:
     st.warning(f"Corrélation non calculée : {e}")
-
-
-
 
 # =========================
 # 8) Notes
@@ -342,5 +337,6 @@ with st.expander("Notes & hypothèses"):
         "- **Horizon** : jusqu'à 2030 ou custom (années).  \n"
         "- **IC** : ruban entre `yhat_lower` et `yhat_upper`.  \n"
         "- **Google Trends** : lecture d'un CSV fallback.  \n"
-        "- **Caveat** : prévisions illustratives, à consolider avec l’équipe métier."
+        "- **Corrélation** : Pearson sur période commune (série CA jointe aux Trends).  \n"
+        "- **Caveat** : résultats illustratifs — à consolider avec les équipes métier."
     )
